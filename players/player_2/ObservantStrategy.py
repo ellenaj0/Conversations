@@ -17,6 +17,7 @@ class ObservantStrategy(BaseStrategy):
 	def propose_item(self, player: Player, history: list[Item]) -> Item | None:
 		turn_nr = len(history) + 1
 		num_p = self.player.number_of_players
+		print(f"Turn {turn_nr}, Player {player.id}'s turn to propose")
 
 		# Don't propose if no items left
 		if len(player.sub_to_item) == 0:
@@ -37,8 +38,8 @@ class ObservantStrategy(BaseStrategy):
 				and len(player.sub_to_item[last_proposed_subjects]) != 0
 			):
 				context = self._get_context(history)
+				
 				context_subs_sorted = dict(self._get_subjects_counts_sorted(context, player))
-
 				# Don't propose if it would lead to monotonous conversation
 				if (
 					len(last_proposed_subjects) == 2
@@ -103,7 +104,10 @@ class ObservantStrategy(BaseStrategy):
 		context = self._get_context(history)
 
 		context_subs_sorted = self._get_subjects_counts_sorted(context, player)
-
+		print(f"Context subjects sorted: {context_subs_sorted}")
+		# Get items with subject count three
+		context_subs_counts_3 = [subs for subs, count in context_subs_sorted if count == 3]
+		print(f"Context subjects with count 3: {context_subs_counts_3}")
 		# Go through all subjects in context, sorted according to frequency in context and then by number of items in own memory bank
 		# If there are no items in memory bank that match the subjects in context, then pause
 		for subs, subs_count in context_subs_sorted:
@@ -112,25 +116,32 @@ class ObservantStrategy(BaseStrategy):
 				for idx, subs_count_tup in enumerate(context_subs_sorted):
 					if len(subs_count_tup[0]) == 2 and subs[0] in subs_count_tup[0]:
 						context_subs_sorted[idx] = (subs_count_tup[0], subs_count_tup[1] + 3)
-
+						print(f"Artificially increasing count of {subs_count_tup[0]} to {context_subs_sorted[idx][1]}")
 			# If a subject already occurred thrice then we don't want to be monotonous
 			# if subject was repeated 3 times even if contained in 2 subject item
 			if subs_count < 3:
 				items_with_subs = player.sub_to_item.get(subs, []).copy()
 				# If there is only one subject, also get items with two subjects including that subject
+				# Exception: If the second subject already occurred in context, don't include those items
 				if (
 					self.memory_size_avg_turns_ratio < self.memory_size_avg_turns_threshold
 					and len(subs) == 1
 				):
-					items_with_subs.extend(
-						[
-							item
-							for items_subs, items in player.sub_to_item.items()
-							if subs[0] in items_subs
-							for item in items
-						]
-					)
-
+					for items_subs, items in player.sub_to_item.items():
+						if len(items_subs) == 2 and subs[0] in items_subs:
+							other_sub = [s for s in items_subs if s != subs[0]][0]
+							if (other_sub,) not in context_subs_counts_3:
+								print(f"Also considering items with subjects {items_subs} since {subs[0]} occurred once in context and {other_sub} did not occur 3 times")
+								items_with_subs.extend(items)
+					# items_with_subs.extend(
+					# 	[
+					# 		item
+					# 		for items_subs, items in player.sub_to_item.items()
+					# 		if subs[0] in items_subs and context_subs_counts_3.count(items_subs) == 0
+					# 		for item in items
+					# 	]
+					# )
+				print(f"Items with subjects {subs}: {items_with_subs}")
 				# If the subject only occurred once in the context and we only have one item with this subject, propose it only if it meets a minimum score threshold
 				if (
 					subs_count == 1
@@ -140,6 +151,7 @@ class ObservantStrategy(BaseStrategy):
 					and self._get_pref_score(items_with_subs[0], player) > self.min_pref_score
 				):
 					player.last_proposed_item = items_with_subs[0]
+					print(f"Proposing item {items_with_subs[0]} for subjects {subs}")
 					return items_with_subs[0]
 
 				# If we have an item with fitting subjects, propose the most valuable one
@@ -149,6 +161,7 @@ class ObservantStrategy(BaseStrategy):
 					)
 
 					player.last_proposed_item = most_valuable_item
+					print(f"Proposing item {most_valuable_item} for subjects {subs}")
 					return most_valuable_item
 
 		return None
